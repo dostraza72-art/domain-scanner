@@ -14,12 +14,11 @@ console.log(`📍 TLDs: ${tlds.join(', ')}\n`);
 let foundDomains = [];
 
 // Query Crt.sh (Free Certificate Transparency API)
-async function queryCertTransparency(keyword, tld) {
+function queryCertTransparency(keyword, tld) {
   return new Promise((resolve) => {
-    const domain = `${keyword}.${tld}`;
     const url = `https://crt.sh/?q=%25${keyword}%25.${tld}&output=json`;
 
-    https.get(url, { timeout: 10000 }, (res) => {
+    https.get(url, { timeout: 15000 }, (res) => {
       let data = '';
       
       res.on('data', chunk => data += chunk);
@@ -57,7 +56,7 @@ async function queryCertTransparency(keyword, tld) {
       });
     }).on('error', () => resolve([]));
 
-    setTimeout(() => resolve([]), 10000);
+    setTimeout(() => resolve([]), 15000);
   });
 }
 
@@ -95,7 +94,7 @@ async function main() {
         console.error(`Error scanning ${keyword}.${tld}`);
       }
 
-      await new Promise(r => setTimeout(r, 500));
+      await new Promise(r => setTimeout(r, 800));
     }
   }
 
@@ -133,7 +132,6 @@ async function main() {
     fs.writeFileSync(filename, csv);
     console.log(`💾 Saved to: ${filename}\n`);
 
-    // Alert message
     console.log(`\n🚨 ACTION: Write blog posts about these NEW domains!`);
     console.log(`   They just got SSL certificates (days/hours old)`);
     console.log(`   Get ahead of competitors!\n`);
@@ -141,4 +139,13 @@ async function main() {
   } else {
     console.log(`⚠️ No new domains found with your keywords`);
     console.log(`Tips to find more:`);
-    console.log(
+    console.log(`   - Add more keywords (specific to your niche)`);
+    console.log(`   - Add more TLDs (.io, .xyz, .site)`);
+    console.log(`   - Run scan more frequently\n`);
+  }
+}
+
+main().catch(error => {
+  console.error('Fatal error:', error);
+  process.exit(1);
+});
