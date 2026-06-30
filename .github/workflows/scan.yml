@@ -1,0 +1,27 @@
+name: Domain Scanner
+
+on:
+  schedule:
+    - cron: '0 9 * * *'  # Runs daily at 9 AM
+  workflow_dispatch:     # Manual trigger
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions/setup-node@v2
+      
+      - name: Install dependencies
+        run: npm install axios
+      
+      - name: Run domain scanner
+        run: node scanner.js
+        env:
+          WHOIS_API_KEY: ${{ secrets.WHOIS_API_KEY }}
+
+      - name: Upload results
+        uses: actions/upload-artifact@v2
+        with:
+          name: domain-results
+          path: domains-*.csv
