@@ -10,8 +10,8 @@ if (!WHOIS_API_KEY) {
 
 console.log(`✅ API Key found: ${WHOIS_API_KEY.substring(0, 10)}...`);
 
-const keywords = ['999', '777', '666', '789', 'casino', 'betting'];
-const tlds = ['com', 'top', 'win', 'bet'];
+const keywords = ['game', 'app', 'online', 'play', 'casino', 'betting'];
+const tlds = ['com'];
 
 const today = new Date();
 const sevenDaysAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
@@ -27,30 +27,23 @@ let allDomains = [];
 
 async function scan() {
   let scanned = 0;
-  let found = 0;
 
   for (let keyword of keywords) {
     for (let tld of tlds) {
       scanned++;
       try {
-        const url = 'https://www.whoisxmlapi.com/api/v1/domains-search';
+        const url = `https://www.whoisxmlapi.com/api/v1/domains-search?keyword=${keyword}&tld=${tld}&registrationDateFrom=${dateFrom}&registrationDateTo=${dateTo}&apiKey=${WHOIS_API_KEY}`;
+        
+        console.log(`Querying: ${keyword}.${tld}...`);
         
         const response = await axios.get(url, {
-          params: {
-            keyword: keyword,
-            tld: tld,
-            registrationDateFrom: dateFrom,
-            registrationDateTo: dateTo,
-            apiKey: WHOIS_API_KEY
-          },
-          timeout: 15000
+          timeout: 20000
         });
 
         const count = response.data.domainsCount || 0;
         
         if (count > 0) {
-          console.log(`✅ ${keyword}.${tld}: ${count} domains`);
-          found += count;
+          console.log(`✅ ${keyword}.${tld}: ${count} domains FOUND!`);
           
           for (let domain of response.data.domains) {
             allDomains.push({
@@ -61,21 +54,29 @@ async function scan() {
             });
           }
         } else {
-          console.log(`○ ${keyword}.${tld}: No results`);
+          console.log(`○ ${keyword}.${tld}: No results (but API working)`);
         }
 
       } catch (error) {
+        const status = error.response?.status || 'No status';
         const errorMsg = error.response?.data?.error || error.message;
-        console.error(`❌ ${keyword}.${tld}: ${errorMsg}`);
+        
+        if (status === 403) {
+          console.error(`❌ 403 FORBIDDEN - Check API key or quota!`);
+          console.error(`   Error: ${errorMsg}`);
+        } else if (status === 404) {
+          console.log(`○ 404 - No data for ${keyword}.${tld}`);
+        } else {
+          console.error(`❌ ${keyword}.${tld}: ${status} - ${errorMsg}`);
+        }
       }
 
-      await new Promise(r => setTimeout(r, 400));
+      await new Promise(r => setTimeout(r, 1000));
     }
   }
 
   console.log(`\n✅ SCAN COMPLETE`);
-  console.log(`Scanned: ${scanned} | Found: ${found}`);
-  console.log(`Total domains: ${allDomains.length}\n`);
+  console.log(`Total domains found: ${allDomains.length}\n`);
 
   if (allDomains.length > 0) {
     const csv = [
@@ -89,7 +90,11 @@ async function scan() {
     fs.writeFileSync(filename, csv);
     console.log(`💾 Saved: ${filename}`);
   } else {
-    console.log('No domains found - try broader keywords');
+    console.log('⚠️  No domains found');
+    console.log('Possible reasons:');
+    console.log('  1. API key quota exhausted (500/month)');
+    console.log('  2. API key is invalid');
+    console.log('  3. No new domains with these keywords');
   }
 }
 
