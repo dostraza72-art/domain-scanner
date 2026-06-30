@@ -1,0 +1,12 @@
+{
+  "name": "domain-scanner",
+  "version": "1.0.0",
+  "description": "WhoisXML Domain Scanner",
+  "main": "scanner.js",
+  "scripts": {
+    "scan": "node scanner.js"
+  },
+  "dependencies": {
+    "axios": "^1.6.0"
+  }
+}
