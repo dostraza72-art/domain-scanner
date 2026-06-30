@@ -2,129 +2,200 @@ const https = require('https');
 const fs = require('fs');
 
 // ===== CUSTOMIZE THESE =====
-const keywords = ['999', '777', '666', '789', 'satta', 'khel', 'casino', 'betting', 'lucky', 'play', 'cash', 'earn'];
-const tlds = ['com', 'top', 'win', 'bet', 'app', 'online'];
+const keywords = ['999', '777', '666'];
+const tlds = ['com', 'top', 'bet'];
 // ===========================
 
-console.log(`\n🔍 NEW DOMAIN DETECTOR (Using Certificate Transparency Logs)`);
+console.log(`\n🔍 NEW DOMAIN DETECTOR (Last 30 Days)`);
 console.log(`📅 Date: ${new Date().toLocaleString()}`);
 console.log(`🔑 Keywords: ${keywords.join(', ')}`);
-console.log(`📍 TLDs: ${tlds.join(', ')}\n`);
+console.log(`📍 TLDs: ${tlds.join(', ')}`);
+console.log(`📅 Timeframe: Last 30 days\n`);
 
 let foundDomains = [];
 
-// Query Crt.sh (Free Certificate Transparency API)
-function queryCertTransparency(keyword, tld) {
+// Get date 30 days ago
+const thirtyDaysAgo = new Date();
+thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+console.log(`Searching for domains registered between ${thirtyDaysAgo.toDateString()} and ${new Date().toDateString()}\n`);
+
+// Query WHOIS for registration date
+function queryWhois(domain) {
   return new Promise((resolve) => {
-    const url = `https://crt.sh/?q=%25${keyword}%25.${tld}&output=json`;
-
-    https.get(url, { timeout: 15000 }, (res) => {
-      let data = '';
-      
-      res.on('data', chunk => data += chunk);
-      
-      res.on('end', () => {
-        try {
-          if (res.statusCode === 200 && data) {
-            const results = JSON.parse(data);
-            
-            if (Array.isArray(results) && results.length > 0) {
-              const domains = new Set();
-              
-              results.forEach(cert => {
-                const domainName = cert.name_value || cert.common_name || '';
-                if (domainName) {
-                  domainName.split('\n').forEach(d => {
-                    const clean = d.trim().toLowerCase().replace('*.', '');
-                    if (clean && clean.includes(keyword)) {
-                      domains.add(clean);
-                    }
-                  });
-                }
-              });
-
-              resolve(Array.from(domains));
-            } else {
-              resolve([]);
-            }
-          } else {
-            resolve([]);
-          }
-        } catch (e) {
-          resolve([]);
-        }
-      });
-    }).on('error', () => resolve([]));
-
-    setTimeout(() => resolve([]), 15000);
+    const whoisServer = 'whois.verisign-grs.com';
+    const net = require('net');
+    
+    const socket = net.createConnection(43, whoisServer);
+    let data = '';
+    
+    socket.setTimeout(5000);
+    
+    socket.on('connect', () => {
+      socket.write(`${domain}\r\n`);
+    });
+    
+    socket.on('data', (chunk) => {
+      data += chunk.toString();
+    });
+    
+    socket.on('timeout', () => {
+      socket.destroy();
+      resolve(null);
+    });
+    
+    socket.on('error', () => {
+      resolve(null);
+    });
+    
+    socket.on('end', () => {
+      resolve(data);
+    });
   });
 }
 
-async function main() {
-  console.log(`Searching Certificate Transparency logs for new domains...\n`);
+function extractRegistrationDate(whoisData) {
+  if (!whoisData) return null;
   
-  let processed = 0;
-  const total = keywords.length * tlds.length;
+  const patterns = [
+    /Creation Date:\s*(\d{4}-\d{2}-\d{2})/i,
+    /created:\s*(\d{4}-\d{2}-\d{2})/i,
+    /Created on:\s*(\d{4}-\d{2}-\d{2})/i,
+    /registered:\s*(\d{4}-\d{2}-\d{2})/i,
+  ];
+  
+  for (let pattern of patterns) {
+    const match = whoisData.match(pattern);
+    if (match) {
+      return new Date(match[1]);
+    }
+  }
+  
+  return null;
+}
 
+function isWithinLast30Days(date) {
+  if (!date) return false;
+  return date >= thirtyDaysAgo && date <= new Date();
+}
+
+async function checkDomain(domain) {
+  try {
+    const whoisData = await queryWhois(domain);
+    
+    if (whoisData) {
+      const registrationDate = extractRegistrationDate(whoisData);
+      
+      if (registrationDate && isWithinLast30Days(registrationDate)) {
+        return {
+          registered: true,
+          date: registrationDate,
+          whois: whoisData
+        };
+      }
+    }
+  } catch (error) {
+    // Continue on error
+  }
+  
+  return null;
+}
+
+async function generateDomainCandidates() {
+  const patterns = [
+    (kw, tld) => `${kw}.${tld}`,
+    (kw, tld) => `play${kw}.${tld}`,
+    (kw, tld) => `${kw}pro.${tld}`,
+    (kw, tld) => `lucky${kw}.${tld}`,
+    (kw, tld) => `${kw}bet.${tld}`,
+    (kw, tld) => `${kw}game.${tld}`,
+    (kw, tld) => `${kw}casino.${tld}`,
+    (kw, tld) => `${kw}online.${tld}`,
+    (kw, tld) => `best${kw}.${tld}`,
+    (kw, tld) => `win${kw}.${tld}`,
+  ];
+  
+  const domains = new Set();
+  
   for (let keyword of keywords) {
     for (let tld of tlds) {
-      processed++;
-      process.stdout.write(`\r[${processed}/${total}] Scanning ${keyword}.${tld}...`);
-      
-      try {
-        const domains = await queryCertTransparency(keyword, tld);
-        
-        domains.forEach(domain => {
-          // Check if domain matches our criteria
-          if (keywords.some(kw => domain.includes(kw)) && 
-              tlds.some(t => domain.endsWith(`.${t}`))) {
-            
-            if (!foundDomains.find(d => d.domain === domain)) {
-              foundDomains.push({
-                domain: domain,
-                keyword: keyword,
-                tld: tld,
-                found_via: 'Certificate Transparency',
-                timestamp: new Date().toISOString()
-              });
-            }
-          }
-        });
-      } catch (error) {
-        console.error(`Error scanning ${keyword}.${tld}`);
-      }
-
-      await new Promise(r => setTimeout(r, 800));
+      patterns.forEach(pattern => {
+        try {
+          const domain = pattern(keyword, tld);
+          domains.add(domain);
+        } catch (e) {}
+      });
     }
+  }
+  
+  return Array.from(domains);
+}
+
+async function main() {
+  console.log(`Generating domain candidates...\n`);
+  
+  const candidates = await generateDomainCandidates();
+  console.log(`Checking ${candidates.length} candidate domains for registration in last 30 days...\n`);
+  
+  let checked = 0;
+  
+  for (let domain of candidates) {
+    checked++;
+    process.stdout.write(`\r[${checked}/${candidates.length}] Checking ${domain}...`);
+    
+    const result = await checkDomain(domain);
+    
+    if (result && result.registered) {
+      const keyword = keywords.find(kw => domain.includes(kw));
+      const tld = tlds.find(t => domain.endsWith(`.${t}`));
+      
+      if (!foundDomains.find(d => d.domain === domain)) {
+        foundDomains.push({
+          domain: domain,
+          keyword: keyword || 'unknown',
+          tld: tld || 'unknown',
+          registered_date: result.date.toISOString().split('T')[0],
+          days_old: Math.floor((new Date() - result.date) / (1000 * 60 * 60 * 24)),
+          status: 'NEWLY REGISTERED',
+          timestamp: new Date().toISOString()
+        });
+        
+        console.log(`\n✅ ${domain} - Registered ${Math.floor((new Date() - result.date) / (1000 * 60 * 60 * 24))} days ago`);
+      }
+    }
+    
+    await new Promise(r => setTimeout(r, 500));
   }
 
   console.log(`\n\n${'='.repeat(70)}`);
   console.log(`✅ SCAN COMPLETE`);
   console.log(`${'='.repeat(70)}\n`);
 
-  // Remove duplicates
-  foundDomains = [...new Map(foundDomains.map(d => [d.domain, d])).values()];
-
   console.log(`📊 RESULTS:`);
-  console.log(`   Total Keywords Scanned: ${keywords.length}`);
-  console.log(`   Total TLDs Scanned: ${tlds.length}`);
-  console.log(`   NEW Domains Found: ${foundDomains.length}\n`);
+  console.log(`   Keywords: ${keywords.join(', ')}`);
+  console.log(`   TLDs: ${tlds.join(', ')}`);
+  console.log(`   Timeframe: Last 30 days`);
+  console.log(`   Total Checked: ${checked}`);
+  console.log(`   Newly Registered: ${foundDomains.length}\n`);
 
   if (foundDomains.length > 0) {
-    console.log(`🎯 NEW DOMAINS WITH YOUR KEYWORDS:\n`);
+    console.log(`🎯 NEWLY REGISTERED DOMAINS (Last 30 Days):\n`);
+    
+    foundDomains.sort((a, b) => a.days_old - b.days_old);
     
     foundDomains.forEach((d, i) => {
       console.log(`${i+1}. ${d.domain}`);
-      console.log(`   Keyword Match: ${d.keyword}`);
+      console.log(`   Keyword: ${d.keyword}`);
       console.log(`   TLD: .${d.tld}`);
-      console.log(`   Found: ${d.timestamp}\n`);
+      console.log(`   Registered: ${d.registered_date} (${d.days_old} days ago)`);
+      console.log(`   Status: ${d.status}\n`);
     });
 
     // Save to CSV
     const csv = [
-      'Domain,Keyword,TLD,Found_Via,Timestamp',
+      'Domain,Keyword,TLD,Registered_Date,Days_Old,Status,Timestamp',
       ...foundDomains.map(d => 
-        `"${d.domain}","${d.keyword}","${d.tld}","${d.found_via}","${d.timestamp}"`
+        `"${d.domain}","${d.keyword}","${d.tld}","${d.registered_date}","${d.days_old}","${d.status}","${d.timestamp}"`
       )
     ].join('\n');
 
@@ -132,20 +203,19 @@ async function main() {
     fs.writeFileSync(filename, csv);
     console.log(`💾 Saved to: ${filename}\n`);
 
-    console.log(`\n🚨 ACTION: Write blog posts about these NEW domains!`);
-    console.log(`   They just got SSL certificates (days/hours old)`);
-    console.log(`   Get ahead of competitors!\n`);
+    console.log(`\n🚨 ACTION: Write SEO articles about these FRESH domains!`);
+    console.log(`   These are brand new registrations (0-30 days old)`);
+    console.log(`   Get content live FAST before competitors!\n`);
 
   } else {
-    console.log(`⚠️ No new domains found with your keywords`);
-    console.log(`Tips to find more:`);
-    console.log(`   - Add more keywords (specific to your niche)`);
-    console.log(`   - Add more TLDs (.io, .xyz, .site)`);
-    console.log(`   - Run scan more frequently\n`);
+    console.log(`⚠️ No newly registered domains found in last 30 days`);
+    console.log(`   Keywords: 999, 777, 666`);
+    console.log(`   TLDs: .com, .top, .bet`);
+    console.log(`   Try running scan again tomorrow\n`);
   }
 }
 
 main().catch(error => {
-  console.error('Fatal error:', error);
+  console.error('Fatal error:', error.message);
   process.exit(1);
 });
