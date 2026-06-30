@@ -16,13 +16,8 @@ jobs:
         with:
           node-version: '24'
       
-      - name: Install dependencies
-        run: npm install axios
-      
-      - name: Run domain scanner
+      - name: Run custom domain scanner
         run: node scanner.js
-        env:
-          WHOIS_API_KEY: ${{ secrets.WHOIS_API_KEY }}
 
       - name: Upload results
         uses: actions/upload-artifact@v4
