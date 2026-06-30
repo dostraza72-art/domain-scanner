@@ -1,65 +1,113 @@
-const axios = require('axios');
+const dns = require('dns').promises;
 const fs = require('fs');
 
-const WHOIS_API_KEY = process.env.WHOIS_API_KEY || 'at_YZnIfhVW0RMkTsmPHO4yBYcI4ZHw6';
+// ===== CUSTOMIZE THESE =====
+const keywords = ['999', '777', '666', '789', 'satta', 'khel', 'casino', 'betting'];
+const tlds = ['com', 'top', 'win', 'bet'];
+// ===========================
 
-console.log(`✅ Using API Key: ${WHOIS_API_KEY.substring(0, 15)}...`);
+console.log(`\n🔍 CUSTOM DOMAIN SCANNER (FREE - NO API NEEDED)`);
+console.log(`📅 Date: ${new Date().toLocaleString()}`);
+console.log(`🔑 Keywords: ${keywords.join(', ')}`);
+console.log(`📍 Extensions: ${tlds.join(', ')}\n`);
+console.log(`Scanning ${keywords.length * tlds.length} domains...\n`);
 
-const today = new Date();
-const sixtyDaysAgo = new Date(today.getTime() - 60 * 24 * 60 * 60 * 1000);
+let foundDomains = [];
+let scannedCount = 0;
+let activeCount = 0;
 
-const dateFrom = sixtyDaysAgo.toISOString().split('T')[0];
-const dateTo = today.toISOString().split('T')[0];
-
-console.log(`\n📅 Searching: ${dateFrom} to ${dateTo} (60 days)\n`);
-
-async function searchDomain(keyword, tld) {
+async function checkDomain(domain) {
   try {
-    const url = `https://www.whoisxmlapi.com/api/v1/domains-search?keyword=${encodeURIComponent(keyword)}&tld=${tld}&registrationDateFrom=${dateFrom}&registrationDateTo=${dateTo}&apiKey=${WHOIS_API_KEY}`;
+    // Try IPv4 resolution
+    const result = await dns.resolve4(domain);
+    return result.length > 0;
+  } catch (error) {
+    // Try IPv6 as backup
+    try {
+      const result = await dns.resolve6(domain);
+      return result.length > 0;
+    } catch {
+      return false;
+    }
+  }
+}
+
+async function scanDomain(keyword, tld) {
+  const domain = `${keyword}.${tld}`;
+  scannedCount++;
+  
+  try {
+    const isActive = await checkDomain(domain);
     
-    const response = await axios.get(url, { timeout: 30000 });
-    const count = response.data.domainsCount || 0;
-    
-    if (count > 0) {
-      console.log(`✅ ${keyword}.${tld}: ${count} domains`);
-      return response.data.domains;
+    if (isActive) {
+      console.log(`✅ ${domain} - ACTIVE`);
+      activeCount++;
+      foundDomains.push({
+        keyword: keyword,
+        domain: domain,
+        tld: tld,
+        status: 'ACTIVE',
+        checked_at: new Date().toISOString()
+      });
     } else {
-      console.log(`○ ${keyword}.${tld}: No results`);
-      return [];
+      console.log(`○ ${domain} - Inactive`);
     }
   } catch (error) {
-    console.error(`❌ ${keyword}.${tld}: ${error.response?.status || error.message}`);
-    return [];
+    console.log(`? ${domain} - Error checking`);
   }
+  
+  await new Promise(resolve => setTimeout(resolve, 300));
 }
 
 async function main() {
-  const keywords = ['999', '777', '666', '789', 'satta', 'khel', 'casino', 'betting'];
-  const tlds = ['com', 'top', 'win', 'bet'];
-  let allResults = [];
+  console.log(`Starting scan of ${keywords.length} keywords x ${tlds.length} TLDs\n`);
   
   for (let keyword of keywords) {
     for (let tld of tlds) {
-      const results = await searchDomain(keyword, tld);
-      allResults = allResults.concat(results);
-      await new Promise(r => setTimeout(r, 800));
+      await scanDomain(keyword, tld);
     }
   }
+
+  console.log(`\n${'='.repeat(60)}`);
+  console.log(`✅ SCAN COMPLETE`);
+  console.log(`${'='.repeat(60)}\n`);
   
-  console.log(`\n✅ COMPLETE - Found ${allResults.length} domains\n`);
-  
-  if (allResults.length > 0) {
+  console.log(`📊 RESULTS:`);
+  console.log(`   Total Scanned: ${scannedCount}`);
+  console.log(`   Active Domains: ${activeCount}`);
+  console.log(`   Percentage: ${((activeCount/scannedCount)*100).toFixed(1)}%\n`);
+
+  if (foundDomains.length > 0) {
+    console.log(`📋 ACTIVE DOMAINS FOUND:\n`);
+    foundDomains.forEach((d, i) => {
+      console.log(`${i+1}. ${d.domain}`);
+      console.log(`   Keyword: ${d.keyword}`);
+      console.log(`   TLD: .${d.tld}`);
+      console.log(`   Status: ${d.status}`);
+      console.log(`   Checked: ${d.checked_at}\n`);
+    });
+
+    // Save to CSV
     const csv = [
-      'Domain,Registrar,Created',
-      ...allResults.map(d => `"${d.domain}","${d.registrar || 'Unknown'}","${d.createDate || 'Unknown'}"`)
+      'Keyword,Domain,TLD,Status,Checked_At',
+      ...foundDomains.map(d => 
+        `"${d.keyword}","${d.domain}","${d.tld}","${d.status}","${d.checked_at}"`
+      )
     ].join('\n');
-    
-    fs.writeFileSync(`domains-${dateTo}.csv`, csv);
-    console.log(`💾 Saved: domains-${dateTo}.csv`);
+
+    const filename = `domains-${new Date().toISOString().split('T')[0]}.csv`;
+    fs.writeFileSync(filename, csv);
+    console.log(`💾 Results saved to: ${filename}\n`);
   } else {
-    console.log('⚠️ No domains found with current keywords.');
-    console.log('Try: broader keywords, longer time period, or different extensions');
+    console.log(`⚠️  No active domains found`);
+    console.log(`Try:`);
+    console.log(`   - Adding more keywords`);
+    console.log(`   - Changing TLDs`);
+    console.log(`   - Running scan again in a few minutes\n`);
   }
 }
 
-main().catch(console.error);
+main().catch(error => {
+  console.error('Fatal error:', error);
+  process.exit(1);
+});
